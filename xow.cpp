@@ -18,6 +18,7 @@
 
 #include "utils/log.h"
 #include "utils/reader.h"
+#include "utils/pid_file.h"
 #include "dongle/usb.h"
 #include "dongle/dongle.h"
 
@@ -28,12 +29,15 @@
 #include <iostream>
 #include <sys/signalfd.h>
 
+std::string pid_file_path;
+
 void usage(const char* bin_path) {
     std::cout << "xow (c) 2019 Medusalix" << std::endl;
     std::cout << bin_path << ": " << std::endl;
     std::cout << "-h | --help       Show this help message" << std::endl;
     std::cout << "-v | --version    Print version" << std::endl;
     std::cout << "-s | --syslog     Log to syslog" << std::endl;
+    std::cout << "-p | --pid        PID file" << std::endl;
 }
 
 int parseArgs(int argc, char* argv[])
@@ -42,12 +46,13 @@ int parseArgs(int argc, char* argv[])
         {"help",      no_argument,        0,  'h'},
         {"version",   no_argument,        0,  'v'},
         {"syslog",    no_argument,        0,  's'},
+        {"pid",       required_argument,  0,  'p'},
         {0,           0,                  0,  0  }};
 
     while(1) {
         int option;
 
-        option = getopt_long(argc, argv, "hvs", long_options, 0);
+        option = getopt_long(argc, argv, "hvsp:", long_options, 0);
         if(option == -1)
         {
             break;
@@ -63,6 +68,9 @@ int parseArgs(int argc, char* argv[])
             case 's':
                 Log::LoggerInstance::instance().installSysloger();
                 break;
+            case 'p':
+                pid_file_path = optarg;
+                break;
             case '?':
             default:
                 usage(argv[0]);
@@ -75,6 +83,8 @@ int parseArgs(int argc, char* argv[])
 
 int main(int argc, char* argv[])
 {
+    std::unique_ptr<PidFile> pid_file;
+
     switch(parseArgs(argc, argv)) {
         case 1: break;
         case 0: return 0;
@@ -127,6 +137,12 @@ int main(int argc, char* argv[])
         Log::error("Error blocking signals: %s", strerror(errno));
 
         return EXIT_FAILURE;
+    }
+
+    // Now we have registered exit signals, we can exit gracefully and
+    // instantiate a PID file for pairing with SIGUSR1
+    if(pid_file_path != "") {
+        pid_file = std::make_unique<PidFile>(pid_file_path);
     }
 
     int file = signalfd(-1, &signalMask, 0);
